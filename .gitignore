@@ -6,8 +6,12 @@
 *.swp
 .buildlog/
 .history
-
-
+.idea/
+.metadata
+build/
+.dart_tool/
+.android/build/
+*.DS_Store
 
 # Flutter repo-specific
 /bin/cache/

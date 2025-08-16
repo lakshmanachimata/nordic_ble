@@ -1,0 +1,372 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import '../viewmodels/connected_device_viewmodel.dart';
+import '../theme/app_theme.dart';
+
+class ConnectedDeviceScreen extends StatefulWidget {
+  final BluetoothDevice device;
+  final String deviceName;
+  final VoidCallback onDisconnect;
+
+  const ConnectedDeviceScreen({
+    super.key,
+    required this.device,
+    required this.deviceName,
+    required this.onDisconnect,
+  });
+
+  @override
+  State<ConnectedDeviceScreen> createState() => _ConnectedDeviceScreenState();
+}
+
+class _ConnectedDeviceScreenState extends State<ConnectedDeviceScreen> {
+  @override
+  Widget build(BuildContext context) {
+    return ChangeNotifierProvider(
+      create: (context) => ConnectedDeviceViewModel(
+        device: widget.device,
+        deviceName: widget.deviceName,
+      ),
+      child: Consumer<ConnectedDeviceViewModel>(
+        builder: (context, viewModel, child) {
+          return Scaffold(
+            backgroundColor: AppTheme.lightBlue,
+            appBar: AppBar(
+              title: Text('Connected: ${widget.deviceName}'),
+              backgroundColor: AppTheme.purpleHighlight,
+              foregroundColor: AppTheme.white,
+              elevation: 0,
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.bluetooth_disabled),
+                  onPressed: () async {
+                    await viewModel.disconnect();
+                    widget.onDisconnect();
+                  },
+                  tooltip: 'Disconnect',
+                ),
+              ],
+            ),
+            body: Column(
+              children: [
+                // Connection status and controls
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  margin: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppTheme.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      // Connection status
+                      Row(
+                        children: [
+                          Icon(
+                            viewModel.isConnected ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
+                            color: viewModel.isConnected ? AppTheme.greenAccent : Colors.red,
+                            size: 24,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              viewModel.isConnected ? 'Connected' : 'Disconnected',
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                color: viewModel.isConnected ? AppTheme.greenAccent : Colors.red,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      
+                      const SizedBox(height: 16),
+                      
+                      // Command sequence controls
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: viewModel.isConnected && viewModel.state == CommunicationState.idle
+                                  ? viewModel.startCommandSequence
+                                  : null,
+                              icon: const Icon(Icons.play_arrow),
+                              label: const Text('Start Commands'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppTheme.purpleHighlight,
+                                foregroundColor: AppTheme.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          ElevatedButton.icon(
+                            onPressed: viewModel.commandResponses.isNotEmpty
+                                ? viewModel.resetCommandSequence
+                                : null,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Reset'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.blueAccent,
+                              foregroundColor: AppTheme.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                      
+                      // Progress indicator
+                      if (viewModel.state == CommunicationState.sending || viewModel.state == CommunicationState.waiting)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 16),
+                          child: Column(
+                            children: [
+                              LinearProgressIndicator(
+                                value: viewModel.commandResponses.length / ConnectedDeviceViewModel.commands.length,
+                                backgroundColor: AppTheme.lightBlue,
+                                valueColor: AlwaysStoppedAnimation<Color>(AppTheme.purpleHighlight),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                '${viewModel.commandResponses.length + 1}/${ConnectedDeviceViewModel.commands.length} - ${_getStateText(viewModel.state)}',
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: AppTheme.purpleHighlight,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                
+                // Commands list
+                Expanded(
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: AppTheme.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.1),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        // Header
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppTheme.purpleLight,
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(16),
+                              topRight: Radius.circular(16),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.list_alt,
+                                color: AppTheme.purpleHighlight,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Command Sequence',
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  color: AppTheme.purpleHighlight,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const Spacer(),
+                              if (viewModel.hasCompletedAllCommands)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.greenAccent,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    'COMPLETED',
+                                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                      color: AppTheme.white,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        
+                        // Commands list
+                        Expanded(
+                          child: ListView.builder(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: ConnectedDeviceViewModel.commands.length,
+                            itemBuilder: (context, index) {
+                              final command = ConnectedDeviceViewModel.commands[index];
+                              final response = index < viewModel.commandResponses.length 
+                                  ? viewModel.commandResponses[index] 
+                                  : null;
+                              final isCompleted = response != null;
+                              final isCurrent = viewModel.state == CommunicationState.sending && 
+                                              viewModel.commandResponses.length == index;
+                              
+                              return Card(
+                                margin: const EdgeInsets.only(bottom: 12),
+                                color: isCurrent ? AppTheme.lightBlue : AppTheme.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  side: isCompleted 
+                                      ? BorderSide(color: AppTheme.greenAccent, width: 2)
+                                      : isCurrent
+                                          ? BorderSide(color: AppTheme.blueAccent, width: 2)
+                                          : BorderSide.none,
+                                ),
+                                child: ExpansionTile(
+                                  leading: _getCommandIcon(isCompleted, isCurrent),
+                                  title: Text(
+                                    command,
+                                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                      color: isCompleted ? AppTheme.greenAccent : null,
+                                      fontWeight: isCompleted ? FontWeight.w600 : null,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    isCompleted 
+                                        ? 'Response received at ${_formatTime(response.timestamp)}'
+                                        : isCurrent 
+                                            ? 'Sending...'
+                                            : 'Pending',
+                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: isCompleted ? AppTheme.greenAccent : AppTheme.lightText,
+                                    ),
+                                  ),
+                                  children: [
+                                    if (isCompleted) ...[
+                                      const Divider(),
+                                      Padding(
+                                        padding: const EdgeInsets.all(16),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Response:',
+                                              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                                color: AppTheme.purpleHighlight,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Container(
+                                              width: double.infinity,
+                                              padding: const EdgeInsets.all(12),
+                                              decoration: BoxDecoration(
+                                                color: AppTheme.lightBlue,
+                                                borderRadius: BorderRadius.circular(8),
+                                                border: Border.all(color: AppTheme.blueAccent),
+                                              ),
+                                              child: Text(
+                                                response.response,
+                                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                                  fontFamily: 'monospace',
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _getCommandIcon(bool isCompleted, bool isCurrent) {
+    if (isCompleted) {
+      return Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: AppTheme.greenAccent,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Icon(
+          Icons.check,
+          color: AppTheme.white,
+          size: 16,
+        ),
+      );
+    } else if (isCurrent) {
+      return Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: AppTheme.blueAccent,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Icon(
+          Icons.sync,
+          color: AppTheme.white,
+          size: 16,
+        ),
+      );
+    } else {
+      return Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: AppTheme.lightText,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Icon(
+          Icons.schedule,
+          color: AppTheme.white,
+          size: 16,
+        ),
+      );
+    }
+  }
+
+  String _getStateText(CommunicationState state) {
+    switch (state) {
+      case CommunicationState.sending:
+        return 'Sending command...';
+      case CommunicationState.waiting:
+        return 'Waiting for response...';
+      case CommunicationState.completed:
+        return 'All commands completed';
+      case CommunicationState.error:
+        return 'Error occurred';
+      default:
+        return 'Ready';
+    }
+  }
+
+  String _formatTime(DateTime time) {
+    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}:${time.second.toString().padLeft(2, '0')}';
+  }
+}
