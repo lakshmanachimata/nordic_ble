@@ -39,10 +39,12 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
   // Commands to send
   static const List<String> commands = [
     '#GET_MAC_ID!',
+    '#ESP32DIS!',
     '#BSV!',
     '#GM!',
     '7#GFL,5!',
     '5#SPL!',
+    '#GAIN,10!',
   ];
 
   BluetoothService? _uartService;
