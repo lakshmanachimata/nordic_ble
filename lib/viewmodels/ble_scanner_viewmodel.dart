@@ -77,15 +77,15 @@ class BleScannerViewModel extends ChangeNotifier {
       }
 
       // Check permissions
-      if (!await _hasRequiredPermissions()) {
-        await requestPermissions();
-        return;
-      }
+      // if (!await _hasRequiredPermissions()) {
+      //   await requestPermissions();
+      //   return;
+      // }
 
       _setState(BleState.scanning);
       _isScanning = true;
 
-      // Only clear devices if explicitly requested
+      // Clear devices if requested or if we're starting a fresh scan
       if (clearDevices) {
         _devices.clear();
       }
@@ -114,8 +114,32 @@ class BleScannerViewModel extends ChangeNotifier {
     }
   }
 
-  /// Refresh scan without clearing existing devices
+  /// Refresh scan by clearing devices and starting a new scan
   Future<void> refreshScan() async {
+    // Stop any ongoing scan first
+    if (_isScanning) {
+      stopScan();
+    }
+    
+    // Clear all existing devices for a fresh start
+    _devices.clear();
+    notifyListeners();
+    
+    // Start a fresh scan
+    await startScan(clearDevices: false); // We already cleared devices above
+  }
+
+  /// Complete refresh and show completion status
+  void completeRefresh() {
+    if (_devices.isNotEmpty) {
+      _setState(BleState.idle);
+    } else {
+      _setState(BleState.idle);
+    }
+  }
+
+  /// Refresh scan without clearing existing devices (for incremental updates)
+  Future<void> refreshScanIncremental() async {
     if (_isScanning) {
       stopScan();
     }
@@ -129,6 +153,7 @@ class BleScannerViewModel extends ChangeNotifier {
     FlutterBluePlus.stopScan();
     _isScanning = false;
 
+    // Update state based on scan results
     if (_devices.isNotEmpty) {
       _setState(BleState.idle);
     } else {
@@ -182,6 +207,13 @@ class BleScannerViewModel extends ChangeNotifier {
   void clearDevices() {
     _devices.clear();
     notifyListeners();
+  }
+
+  /// Clear devices and reset to idle state
+  void resetToIdle() {
+    _devices.clear();
+    _setState(BleState.idle);
+    _errorMessage = '';
   }
 
   @override

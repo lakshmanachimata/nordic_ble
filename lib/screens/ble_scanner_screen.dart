@@ -52,16 +52,60 @@ class _BleScannerScreenState extends State<BleScannerScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.lightBlue,
-      appBar: AppBar(
-        title: const Text('Evolv28'),
-        backgroundColor: AppTheme.purpleHighlight,
-        foregroundColor: AppTheme.white,
-        elevation: 0,
-      ),
       body: Consumer<BleScannerViewModel>(
         builder: (context, viewModel, child) {
           return Column(
             children: [
+              // AppBar as a custom header
+              Container(
+                color: AppTheme.purpleHighlight,
+                padding: EdgeInsets.only(
+                  top: MediaQuery.of(context).padding.top + 8,
+                  left: 16,
+                  right: 16,
+                  bottom: 16,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Evolv28',
+                        style: TextStyle(
+                          color: AppTheme.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    if (viewModel.state == BleState.scanning)
+                      Container(
+                        margin: const EdgeInsets.only(right: 16),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(AppTheme.white),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Scanning...',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppTheme.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              
               const SizedBox(height: 8),
               // Nordic devices count
               if (viewModel.evolv28Devices.isNotEmpty)
@@ -79,11 +123,21 @@ class _BleScannerScreenState extends State<BleScannerScreen> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        Icons.bluetooth_searching,
-                        color: AppTheme.purpleHighlight,
-                        size: 20,
-                      ),
+                      if (viewModel.state == BleState.scanning)
+                        SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(AppTheme.purpleHighlight),
+                          ),
+                        )
+                      else
+                        Icon(
+                          Icons.bluetooth_searching,
+                          color: AppTheme.purpleHighlight,
+                          size: 20,
+                        ),
                       const SizedBox(width: 8),
                       Text(
                         '${viewModel.evolv28Devices.length} Evolv28 device${viewModel.evolv28Devices.length == 1 ? '' : 's'} found',
@@ -121,10 +175,25 @@ class _BleScannerScreenState extends State<BleScannerScreen> {
     // Always wrap with RefreshIndicator for iOS compatibility
     return RefreshIndicator(
       onRefresh: () async {
-        // Refresh scan without clearing existing devices
+        // Clear devices and start fresh scan
         await viewModel.refreshScan();
+        // Complete the refresh and update UI
+        viewModel.completeRefresh();
         // Wait a bit to show the refresh animation
         await Future.delayed(const Duration(milliseconds: 500));
+        
+        // Show success message
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Scan completed! Found ${viewModel.evolv28Devices.length} Evolv28 device${viewModel.evolv28Devices.length == 1 ? '' : 's'}',
+              ),
+              backgroundColor: AppTheme.purpleHighlight,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
       },
       color: AppTheme.purpleHighlight,
       backgroundColor: AppTheme.white,
@@ -148,6 +217,7 @@ class _BleScannerScreenState extends State<BleScannerScreen> {
     return RefreshIndicator(
       onRefresh: () async {
         await viewModel.refreshScan();
+        viewModel.completeRefresh();
       },
       child: ListView(
         padding: const EdgeInsets.all(16),
@@ -178,7 +248,7 @@ class _BleScannerScreenState extends State<BleScannerScreen> {
                   ElevatedButton.icon(
                     onPressed: () {
                       viewModel.clearError();
-                      viewModel.startScan();
+                      viewModel.refreshScan();
                     },
                     icon: const Icon(Icons.refresh),
                     label: const Text('Try Again'),
@@ -202,6 +272,7 @@ class _BleScannerScreenState extends State<BleScannerScreen> {
         // Refresh scan when pulling to refresh during scanning
         final viewModel = context.read<BleScannerViewModel>();
         await viewModel.refreshScan();
+        viewModel.completeRefresh();
       },
       color: AppTheme.purpleHighlight,
       backgroundColor: AppTheme.white,
@@ -265,7 +336,7 @@ class _BleScannerScreenState extends State<BleScannerScreen> {
           ),
           const SizedBox(height: 16),
           ElevatedButton.icon(
-            onPressed: () => viewModel.startScan(),
+            onPressed: () => viewModel.refreshScan(),
             icon: const Icon(Icons.refresh),
             label: const Text('Scan Again'),
             style: ElevatedButton.styleFrom(
@@ -285,22 +356,22 @@ class _BleScannerScreenState extends State<BleScannerScreen> {
           Icon(Icons.bluetooth_searching, size: 64, color: AppTheme.lightText),
           const SizedBox(height: 16),
           Text(
-            'Scanning for Evolv28 devices...',
+            'No Evolv28 devices found',
             style: Theme.of(
               context,
             ).textTheme.titleLarge?.copyWith(color: AppTheme.lightText),
           ),
           const SizedBox(height: 8),
           Text(
-            'Please wait while we search for nearby Evolv28 BLE devices',
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: AppTheme.lightText),
+            'Pull down to refresh and scan again',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: AppTheme.lightText,
+            ),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 16),
           Text(
-            'Pull down to refresh and scan again',
+            'Make sure your Evolv28 device is nearby and powered on',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: AppTheme.lightText,
               fontStyle: FontStyle.italic,
@@ -325,22 +396,22 @@ class _BleScannerScreenState extends State<BleScannerScreen> {
                 Icon(Icons.bluetooth_searching, size: 64, color: AppTheme.lightText),
                 const SizedBox(height: 16),
                 Text(
-                  'Scanning for Evolv28 devices...',
+                  'No Evolv28 devices found',
                   style: Theme.of(
                     context,
                   ).textTheme.titleLarge?.copyWith(color: AppTheme.lightText),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Please wait while we search for nearby Evolv28 BLE devices',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.copyWith(color: AppTheme.lightText),
+                  'Pull down to refresh and scan again',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppTheme.lightText,
+                  ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Pull down to refresh and scan again',
+                  'Make sure your Evolv28 device is nearby and powered on',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: AppTheme.lightText,
                     fontStyle: FontStyle.italic,
