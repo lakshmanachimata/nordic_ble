@@ -27,15 +27,25 @@ class _BleScannerScreenState extends State<BleScannerScreen> {
   @override
   void initState() {
     super.initState();
-    // Request permissions and start scanning when screen initializes
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final viewModel = context.read<BleScannerViewModel>();
-      await viewModel.requestPermissions();
-      // Start scanning automatically after permissions are granted
-      if (viewModel.state == BleState.idle) {
-        viewModel.startScan();
-      }
+    // Request permissions and start scanning automatically
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _requestPermissionsAndStartScan();
     });
+  }
+
+  Future<void> _requestPermissionsAndStartScan() async {
+    try {
+      // Get the view model first
+      final viewModel = context.read<BleScannerViewModel>();
+      
+      // Request permissions first
+      await viewModel.requestPermissions();
+      
+      // Start scanning after permissions are granted
+      await viewModel.startScan();
+    } catch (e) {
+      print('Error in init: $e');
+    }
   }
 
   @override
@@ -98,12 +108,9 @@ class _BleScannerScreenState extends State<BleScannerScreen> {
   }
 
   Widget _buildDevicesList(BleScannerViewModel viewModel) {
-    if (viewModel.state == BleState.scanning && viewModel.devices.isEmpty) {
-      return _buildScanningShimmer();
-    }
-
-    if (viewModel.evolv28Devices.isEmpty && viewModel.devices.isNotEmpty) {
-      return _buildNoEvolv28DevicesMessage(viewModel);
+    // Show error state if there's an error
+    if (viewModel.state == BleState.error) {
+      return _buildErrorState(viewModel);
     }
 
     if (viewModel.evolv28Devices.isEmpty &&
@@ -111,10 +118,7 @@ class _BleScannerScreenState extends State<BleScannerScreen> {
       return _buildScanningShimmer();
     }
 
-    if (viewModel.evolv28Devices.isEmpty) {
-      return _buildEmptyState();
-    }
-
+    // Always wrap with RefreshIndicator for iOS compatibility
     return RefreshIndicator(
       onRefresh: () async {
         // Refresh scan without clearing existing devices
@@ -124,16 +128,70 @@ class _BleScannerScreenState extends State<BleScannerScreen> {
       },
       color: AppTheme.purpleHighlight,
       backgroundColor: AppTheme.white,
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: viewModel.evolv28Devices.length,
-        itemBuilder: (context, index) {
-          final device = viewModel.evolv28Devices[index];
-          return DeviceListItem(
-            device: device,
-            onTap: () => _connectAndDiscoverServices(device),
-          );
-        },
+      child: viewModel.evolv28Devices.isEmpty
+          ? _buildEmptyStateWithRefresh()
+          : ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: viewModel.evolv28Devices.length,
+              itemBuilder: (context, index) {
+                final device = viewModel.evolv28Devices[index];
+                return DeviceListItem(
+                  device: device,
+                  onTap: () => _connectAndDiscoverServices(device),
+                );
+              },
+            ),
+    );
+  }
+
+  Widget _buildErrorState(BleScannerViewModel viewModel) {
+    return RefreshIndicator(
+      onRefresh: () async {
+        await viewModel.refreshScan();
+      },
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          SizedBox(
+            height: MediaQuery.of(context).size.height * 0.6,
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.error_outline, size: 64, color: Colors.red),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Error occurred',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: Colors.red,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    viewModel.errorMessage,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppTheme.lightText,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      viewModel.clearError();
+                      viewModel.startScan();
+                    },
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Try Again'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.purpleHighlight,
+                      foregroundColor: AppTheme.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -251,6 +309,63 @@ class _BleScannerScreenState extends State<BleScannerScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildEmptyStateWithRefresh() {
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      children: [
+        SizedBox(
+          height: MediaQuery.of(context).size.height * 0.6, // Ensure enough space for pull-to-refresh
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.bluetooth_searching, size: 64, color: AppTheme.lightText),
+                const SizedBox(height: 16),
+                Text(
+                  'Scanning for Evolv28 devices...',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(color: AppTheme.lightText),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Please wait while we search for nearby Evolv28 BLE devices',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(color: AppTheme.lightText),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Pull down to refresh and scan again',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppTheme.lightText,
+                    fontStyle: FontStyle.italic,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 32),
+                // Add a manual refresh button for better iOS compatibility
+                ElevatedButton.icon(
+                  onPressed: () {
+                    final viewModel = context.read<BleScannerViewModel>();
+                    viewModel.refreshScan();
+                  },
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Manual Refresh'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.purpleHighlight,
+                    foregroundColor: AppTheme.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 

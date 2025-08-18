@@ -28,9 +28,7 @@ class BleScannerViewModel extends ChangeNotifier {
 
   // Get only Evolv28 devices
   List<BleDevice> get evolv28Devices => _devices
-      .where(
-        (device) => device.name.toLowerCase().contains('evolv28'),
-      )
+      .where((device) => device.name.toLowerCase().contains('evolv28'))
       .toList();
 
   // List<BleDevice> get nordicDevices => _devices.toList();
@@ -54,16 +52,7 @@ class BleScannerViewModel extends ChangeNotifier {
       // Request location permission (required for BLE scanning on Android)
       final locationStatus = await Permission.location.request();
 
-      // Request Bluetooth permissions
-      final bluetoothStatus = await Permission.bluetooth.request();
-      final bluetoothScanStatus = await Permission.bluetoothScan.request();
-      final bluetoothConnectStatus = await Permission.bluetoothConnect
-          .request();
-
-      if (locationStatus.isGranted &&
-          bluetoothStatus.isGranted &&
-          bluetoothScanStatus.isGranted &&
-          bluetoothConnectStatus.isGranted) {
+      if (locationStatus.isGranted) {
         _setState(BleState.idle);
       } else {
         _setState(BleState.noPermission);
@@ -95,12 +84,12 @@ class BleScannerViewModel extends ChangeNotifier {
 
       _setState(BleState.scanning);
       _isScanning = true;
-      
+
       // Only clear devices if explicitly requested
       if (clearDevices) {
         _devices.clear();
       }
-      
+
       notifyListeners();
 
       // Start scanning
@@ -175,10 +164,7 @@ class BleScannerViewModel extends ChangeNotifier {
   }
 
   Future<bool> _hasRequiredPermissions() async {
-    return await Permission.location.isGranted &&
-        await Permission.bluetooth.isGranted &&
-        await Permission.bluetoothScan.isGranted &&
-        await Permission.bluetoothConnect.isGranted;
+    return await Permission.location.isGranted;
   }
 
   void _setState(BleState newState) {
