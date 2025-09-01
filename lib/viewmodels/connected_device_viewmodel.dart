@@ -27,6 +27,10 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
   CommunicationState _state = CommunicationState.idle;
   String _errorMessage = '';
   bool _isConnected = false;
+  
+  // Add tracking for 5th command responses
+  List<String> _fifthCommandResponses = [];
+  bool _isWaitingForFifthCommand = false;
 
   // Nordic UART Service UUIDs
   static const String nordicUartServiceUUID =
@@ -138,6 +142,7 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
 
     try {
       _commandResponses.clear();
+      _fifthCommandResponses.clear(); // Clear previous 5th command responses
       _setState(CommunicationState.sending);
       notifyListeners();
 
@@ -148,6 +153,14 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
         _setState(CommunicationState.sending);
         notifyListeners();
 
+        // Set flag for 5th command
+        if (i == 4) {
+          _isWaitingForFifthCommand = true;
+          _fifthCommandResponses.clear();
+        } else {
+          _isWaitingForFifthCommand = false;
+        }
+
         // Send command
         await writeCommand(command);
 
@@ -155,9 +168,10 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
         _setState(CommunicationState.waiting);
         notifyListeners();
 
-        // Wait for response with timeout
+        // Wait for response with timeout, pass command index for special handling
         final response = await _waitForResponse(
           timeout: const Duration(seconds: 10),
+          commandIndex: i,
         );
 
         // Add command response
@@ -169,6 +183,9 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
             isSuccess: response.isNotEmpty,
           ),
         );
+
+        // Clear flag after processing
+        _isWaitingForFifthCommand = false;
 
         notifyListeners();
 
@@ -182,43 +199,92 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
     }
   }
 
-  Future<String> _waitForResponse({required Duration timeout}) async {
+  Future<String> _waitForResponse({
+    required Duration timeout,
+    int? commandIndex,
+  }) async {
     final completer = Completer<String>();
     Timer? timeoutTimer;
     String? lastResponse;
+    
+    // Special handling for 5th command (7#GFL,5!) - accumulate all responses
+    if (commandIndex == 4) {
+      // 5th command (0-indexed)
+      
+      // Set timeout
+      timeoutTimer = Timer(timeout, () {
+        if (!completer.isCompleted) {
+          final fullResponse = _fifthCommandResponses.join('\n');
+          completer.complete(
+            fullResponse.isNotEmpty
+                ? fullResponse
+                : 'Timeout - No response received',
+          );
+        }
+      });
 
-    // Set timeout
-    timeoutTimer = Timer(timeout, () {
-      if (!completer.isCompleted) {
-        completer.complete(lastResponse ?? 'Timeout - No response received');
+      // For the 5th command, wait for the completion signal
+      // The responses are being accumulated in _handleNotification
+      while (!completer.isCompleted && _fifthCommandResponses.isNotEmpty) {
+        // Check if we have received the completion signal
+        if (_fifthCommandResponses.any((response) => response.contains('#Completed!'))) {
+          // Wait a bit more to ensure all responses are collected
+          await Future.delayed(const Duration(milliseconds: 500));
+          final fullResponse = _fifthCommandResponses.join('\n');
+          print('5th command - Final response with ${_fifthCommandResponses.length} parts');
+          completer.complete(fullResponse);
+          break;
+        }
+        
+        // Wait a bit before checking again
+        await Future.delayed(const Duration(milliseconds: 100));
       }
-    });
-
-    // Listen for next notification
-    if (_notifyCharacteristic != null) {
-      final subscription = _notifyCharacteristic!.lastValueStream.listen(
-        (value) {
-          if (!completer.isCompleted) {
-            lastResponse = String.fromCharCodes(value);
-            completer.complete(lastResponse!);
-          }
-        },
-        onError: (error) {
-          if (!completer.isCompleted) {
-            completer.complete('Error: $error');
-          }
-        },
-      );
-
-      final response = await completer.future;
-      timeoutTimer.cancel();
-      subscription.cancel();
-
-      return response;
+      
+      // If we haven't completed yet, use what we have
+      if (!completer.isCompleted) {
+        final fullResponse = _fifthCommandResponses.join('\n');
+        completer.complete(fullResponse.isNotEmpty ? fullResponse : 'No responses received');
+      }
     } else {
-      timeoutTimer.cancel();
-      return 'Error: Notify characteristic not available';
+      // Original behavior for other commands
+      // Set timeout
+      timeoutTimer = Timer(timeout, () {
+        if (!completer.isCompleted) {
+          completer.complete(lastResponse ?? 'Timeout - No response received');
+        }
+      });
+
+      // Listen for next notification
+      if (_notifyCharacteristic != null) {
+        final subscription = _notifyCharacteristic!.lastValueStream.listen(
+          (value) {
+            if (!completer.isCompleted) {
+              lastResponse = String.fromCharCodes(value);
+              completer.complete(lastResponse!);
+            }
+          },
+          onError: (error) {
+            if (!completer.isCompleted) {
+              completer.complete('Error: $error');
+            }
+          },
+        );
+
+        final response = await completer.future;
+        timeoutTimer.cancel();
+        subscription.cancel();
+
+        return response;
+      } else {
+        timeoutTimer.cancel();
+        return 'Error: Notify characteristic not available';
+      }
     }
+    
+    // Cancel timeout timer if it's still active
+    timeoutTimer?.cancel();
+    
+    return await completer.future;
   }
 
   void _handleNotification(List<int> value) {
@@ -229,6 +295,12 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
     print('As string: "$stringValue"');
     print('Length: ${value.length}');
     print('=============================');
+    
+    // If we're waiting for the 5th command, accumulate the response
+    if (_isWaitingForFifthCommand) {
+      _fifthCommandResponses.add(stringValue);
+      print('5th command - Accumulated response: "$stringValue" (Total: ${_fifthCommandResponses.length})');
+    }
   }
 
   void _handleError(String error) {
