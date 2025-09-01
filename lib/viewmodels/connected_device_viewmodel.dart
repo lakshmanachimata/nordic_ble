@@ -48,7 +48,13 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
     '#GM!',
     '7#GFL,5!',
     '5#SPL!',
+    '5#STP!',
+    '5#CPS!',
+    '#PS,1,Uplift_Mood.bcu,48,5.0,4,10!',
+    '#ST,20250901125237!',
     '#GAIN,10!',
+    '24#PL,3341,20250901125238,!',
+    '5#SPL!',
   ];
 
   BluetoothService? _uartService;
@@ -191,6 +197,12 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
 
         // Small delay between commands
         await Future.delayed(const Duration(milliseconds: 500));
+        
+        // Special delay for 9th command (5 seconds)
+        if (i == 8) {
+          print('Waiting 5 seconds before sending 9th command...');
+          await Future.delayed(const Duration(seconds: 5));
+        }
       }
 
       _setState(CommunicationState.completed);
