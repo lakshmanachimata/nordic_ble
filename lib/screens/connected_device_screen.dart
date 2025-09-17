@@ -128,6 +128,50 @@ class _ConnectedDeviceScreenState extends State<ConnectedDeviceScreen> {
                         ],
                       ),
                       
+                      // File selection status and play commands button
+                      if (viewModel.state == CommunicationState.waitingForFileSelection) ...[
+                        const SizedBox(height: 16),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppTheme.orangeAccent.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppTheme.orangeAccent),
+                          ),
+                          child: Column(
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.file_download,
+                                    color: AppTheme.orangeAccent,
+                                    size: 24,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      'Please select an audio file to continue',
+                                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                        color: AppTheme.orangeAccent,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'Files have been detected from your device. Please select a file from the list below to start the play commands.',
+                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  color: AppTheme.darkText,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      
                       // File selection button (show when files are available)
                       if (viewModel.availableBcuFiles.isNotEmpty) ...[
                         const SizedBox(height: 16),
@@ -209,6 +253,29 @@ class _ConnectedDeviceScreenState extends State<ConnectedDeviceScreen> {
                                     : '${viewModel.commandResponses.length + 1}/${ConnectedDeviceViewModel.commands.length} - ${_getStateText(viewModel.state)}',
                                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                   color: AppTheme.purpleHighlight,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      
+                      // File selection progress indicator
+                      if (viewModel.state == CommunicationState.waitingForFileSelection)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 16),
+                          child: Column(
+                            children: [
+                              LinearProgressIndicator(
+                                value: viewModel.commandResponses.length / ConnectedDeviceViewModel.commands.length,
+                                backgroundColor: AppTheme.lightBlue,
+                                valueColor: AlwaysStoppedAnimation<Color>(AppTheme.orangeAccent),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                '${viewModel.commandResponses.length}/${ConnectedDeviceViewModel.commands.length} - ${_getStateText(viewModel.state)}',
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: AppTheme.orangeAccent,
                                   fontWeight: FontWeight.w500,
                                 ),
                               ),
@@ -467,6 +534,8 @@ class _ConnectedDeviceScreenState extends State<ConnectedDeviceScreen> {
         return 'Waiting for response...';
       case CommunicationState.completed:
         return 'All commands completed';
+      case CommunicationState.waitingForFileSelection:
+        return 'Waiting for file selection...';
       case CommunicationState.error:
         return 'Error occurred';
       default:
@@ -519,26 +588,27 @@ class _ConnectedDeviceScreenState extends State<ConnectedDeviceScreen> {
                 final isSelected = filename == viewModel.selectedBcuFile;
                 
                 return Card(
-                  margin: const EdgeInsets.only(bottom: 8),
+                  margin: EdgeInsets.only(bottom: 4),
                   color: isSelected ? AppTheme.lightBlue : AppTheme.white,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(8),
                     side: BorderSide(
                       color: isSelected ? AppTheme.purpleHighlight : AppTheme.lightBlue,
                       width: isSelected ? 2 : 1,
                     ),
                   ),
                   child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
                     leading: Container(
-                      padding: const EdgeInsets.all(8),
+                      padding: const EdgeInsets.all(4),
                       decoration: BoxDecoration(
                         color: isSelected ? AppTheme.purpleHighlight : AppTheme.lightBlue,
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(6),
                       ),
                       child: Icon(
                         Icons.music_note,
                         color: isSelected ? AppTheme.white : AppTheme.purpleHighlight,
-                        size: 20,
+                        size: 16,
                       ),
                     ),
                     title: Text(

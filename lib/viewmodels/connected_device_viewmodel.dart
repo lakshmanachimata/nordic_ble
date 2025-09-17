@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
-enum CommunicationState { idle, sending, waiting, completed, error }
+enum CommunicationState { idle, sending, waiting, completed, error, waitingForFileSelection }
 
 class CommandResponse {
   final String command;
@@ -37,6 +37,7 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
   bool _isSendingPlayCommands = false;
   String _selectedBcuFile = 'Uplift_Mood.bcu'; // Default file
   List<String> _availableBcuFiles = [];
+  bool _isWaitingForFileSelection = false;
   
   // Callback for when files are ready to be selected
   Function()? onFilesReady;
@@ -86,6 +87,7 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
   bool get isSendingPlayCommands => _isSendingPlayCommands;
   List<String> get availableBcuFiles => _availableBcuFiles;
   String get selectedBcuFile => _selectedBcuFile;
+  bool get isWaitingForFileSelection => _isWaitingForFileSelection;
 
   ConnectedDeviceViewModel({required this.device, required this.deviceName}) {
     _initializeConnection();
@@ -228,12 +230,17 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
       // Parse the 7#GFL,5! response to extract .bcu files
       await _parseBcuFilesFromResponse();
       
-      // Wait 5 seconds before sending play commands
-      print('Waiting 5 seconds before sending play commands...');
-      await Future.delayed(const Duration(seconds: 5));
-      
-      // Send play commands
-      await _sendPlayCommands();
+      // Set state to wait for file selection
+      if (_availableBcuFiles.isNotEmpty) {
+        _isWaitingForFileSelection = true;
+        _setState(CommunicationState.waitingForFileSelection);
+        print('Waiting for user to select a file before sending play commands...');
+      } else {
+        // If no files found, proceed with default file after 5 seconds
+        print('No files found, using default file. Waiting 5 seconds before sending play commands...');
+        await Future.delayed(const Duration(seconds: 5));
+        await _sendPlayCommands();
+      }
     } catch (e) {
       _handleError('Command sequence error: $e');
     }
@@ -365,6 +372,22 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
 
   void selectBcuFile(String filename) {
     _selectedBcuFile = filename;
+    _isWaitingForFileSelection = false;
+    
+    // Clear previous play command responses before starting new ones
+    _playCommandResponses.clear();
+    _isSendingPlayCommands = false;
+    
+    notifyListeners();
+    
+    // Automatically start play commands after file selection
+    print('File selected: $filename. Starting play commands...');
+    _sendPlayCommands();
+  }
+
+  void resetPlayCommands() {
+    _playCommandResponses.clear();
+    _isSendingPlayCommands = false;
     notifyListeners();
   }
 
@@ -587,6 +610,7 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
     _playCommandResponses.clear();
     _availableBcuFiles.clear();
     _selectedBcuFile = 'Uplift_Mood.bcu'; // Reset to default
+    _isWaitingForFileSelection = false;
     _setState(CommunicationState.idle);
     notifyListeners();
   }
