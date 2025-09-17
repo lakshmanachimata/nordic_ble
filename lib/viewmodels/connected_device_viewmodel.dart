@@ -32,7 +32,7 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
   // Add tracking for 5th command responses
   List<String> _fifthCommandResponses = [];
   bool _isWaitingForFifthCommand = false;
-  
+
   // Add tracking for play commands
   bool _isSendingPlayCommands = false;
 
@@ -60,7 +60,7 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
     '5#CPS!',
     '#PS,1,Uplift_Mood.bcu,48,5.0,4,10!',
     '#ST,20250901125237!',
-    '#GAIN,10!',
+    '#GAIN,27!',
     '24#PL,3341,20250901125238,!',
     '5#SPL!',
   ];
@@ -217,14 +217,13 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
       }
 
       _setState(CommunicationState.completed);
-      
+
       // Wait 5 seconds before sending play commands
       print('Waiting 5 seconds before sending play commands...');
       await Future.delayed(const Duration(seconds: 5));
-      
+
       // Send play commands
       await _sendPlayCommands();
-      
     } catch (e) {
       _handleError('Command sequence error: $e');
     }
