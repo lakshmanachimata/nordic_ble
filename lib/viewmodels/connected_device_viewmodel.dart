@@ -35,6 +35,11 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
 
   // Add tracking for play commands
   bool _isSendingPlayCommands = false;
+  String _selectedBcuFile = 'Uplift_Mood.bcu'; // Default file
+  List<String> _availableBcuFiles = [];
+  
+  // Callback for when files are ready to be selected
+  Function()? onFilesReady;
 
   // Nordic UART Service UUIDs
   static const String nordicUartServiceUUID =
@@ -79,6 +84,8 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
   bool get hasCompletedAllCommands =>
       _commandResponses.length == commands.length;
   bool get isSendingPlayCommands => _isSendingPlayCommands;
+  List<String> get availableBcuFiles => _availableBcuFiles;
+  String get selectedBcuFile => _selectedBcuFile;
 
   ConnectedDeviceViewModel({required this.device, required this.deviceName}) {
     _initializeConnection();
@@ -217,16 +224,148 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
       }
 
       _setState(CommunicationState.completed);
-
+      
+      // Parse the 7#GFL,5! response to extract .bcu files
+      await _parseBcuFilesFromResponse();
+      
       // Wait 5 seconds before sending play commands
       print('Waiting 5 seconds before sending play commands...');
       await Future.delayed(const Duration(seconds: 5));
-
+      
       // Send play commands
       await _sendPlayCommands();
     } catch (e) {
       _handleError('Command sequence error: $e');
     }
+  }
+
+  Future<void> _parseBcuFilesFromResponse() async {
+    try {
+      // Find the 7#GFL,5! command response (5th command, index 4)
+      if (_commandResponses.length > 4) {
+        final gflResponse = _commandResponses[4].response;
+        print('=== PARSING GFL RESPONSE ===');
+        print('Full response: $gflResponse');
+        print('Response length: ${gflResponse.length}');
+        
+        // Extract .bcu files from the response
+        final lines = gflResponse.split('\n');
+        _availableBcuFiles.clear();
+        
+        print('Split into ${lines.length} lines:');
+        for (int i = 0; i < lines.length; i++) {
+          print('Line $i: "${lines[i]}"');
+        }
+        
+        // Strategy 0: Handle common file listing formats
+        // Look for patterns like:
+        // - "file1.bcu file2.bcu file3.bcu"
+        // - "file1.bcu,file2.bcu,file3.bcu"
+        // - "file1.bcu\nfile2.bcu\nfile3.bcu"
+        // - "Files: file1.bcu file2.bcu file3.bcu"
+        // - "Available files: file1.bcu, file2.bcu, file3.bcu"
+        
+        // First, try to find a line that contains multiple .bcu files
+        String? multiFileLine;
+        for (final line in lines) {
+          final trimmedLine = line.trim();
+          if (trimmedLine.toLowerCase().contains('.bcu')) {
+            // Count how many .bcu files are in this line
+            final bcuCount = '.bcu'.allMatches(trimmedLine.toLowerCase()).length;
+            if (bcuCount > 1) {
+              multiFileLine = trimmedLine;
+              print('Found multi-file line: $multiFileLine');
+              break;
+            }
+          }
+        }
+        
+        if (multiFileLine != null) {
+          // Extract all .bcu files from this line
+          RegExp multiFilePattern = RegExp(r'([a-zA-Z0-9_\-\.]+\.bcu)', caseSensitive: false);
+          final matches = multiFilePattern.allMatches(multiFileLine);
+          for (final match in matches) {
+            String filename = match.group(1) ?? '';
+            if (filename.isNotEmpty) {
+              _availableBcuFiles.add(filename);
+              print('Multi-file strategy - Found filename: $filename');
+            }
+          }
+        }
+        
+        // Simplified and more robust parsing approach
+        for (final line in lines) {
+          final trimmedLine = line.trim();
+          print('Checking line: "$trimmedLine"');
+          
+          if (trimmedLine.toLowerCase().contains('.bcu')) {
+            print('Found .bcu in line: $trimmedLine');
+            
+            // Use a comprehensive regex to find all .bcu filenames
+            RegExp bcuPattern = RegExp(r'([a-zA-Z0-9_\-\.]+\.bcu)', caseSensitive: false);
+            final matches = bcuPattern.allMatches(trimmedLine);
+            
+            for (final match in matches) {
+              String filename = match.group(1) ?? '';
+              if (filename.isNotEmpty && filename.length > 4) {
+                // Clean up any trailing punctuation
+                filename = filename.replaceAll(RegExp(r'[,;:\s]+$'), '');
+                if (filename.toLowerCase().endsWith('.bcu')) {
+                  _availableBcuFiles.add(filename);
+                  print('Found and added filename: $filename');
+                }
+              }
+            }
+          }
+        }
+        
+        // Strategy 5: If we still haven't found files, try a more aggressive approach
+        if (_availableBcuFiles.isEmpty) {
+          print('No files found with previous strategies, trying aggressive parsing...');
+          
+          // Look for any string that ends with .bcu anywhere in the response
+          RegExp aggressivePattern = RegExp(r'([a-zA-Z0-9_\-\.]+\.bcu)', caseSensitive: false);
+          final allMatches = aggressivePattern.allMatches(gflResponse);
+          for (final match in allMatches) {
+            String filename = match.group(1) ?? '';
+            if (filename.isNotEmpty && filename.length > 4) {
+              _availableBcuFiles.add(filename);
+              print('Aggressive strategy - Found filename: $filename');
+            }
+          }
+        }
+        
+        // Remove duplicates and sort
+        _availableBcuFiles = _availableBcuFiles.toSet().toList()..sort();
+        
+        print('=== FINAL RESULT ===');
+        print('Found ${_availableBcuFiles.length} .bcu files: $_availableBcuFiles');
+        
+        // If we found files, use the first one as default
+        if (_availableBcuFiles.isNotEmpty) {
+          _selectedBcuFile = _availableBcuFiles.first;
+          print('Selected file: $_selectedBcuFile');
+          // Trigger callback to show file selection popup
+          print('Triggering onFilesReady callback...');
+          onFilesReady?.call();
+        } else {
+          print('No .bcu files found, using default: $_selectedBcuFile');
+          // Don't show popup if no files are found
+        }
+        
+        notifyListeners();
+      } else {
+        print('Not enough command responses yet (${_commandResponses.length})');
+      }
+    } catch (e) {
+      print('Error parsing BCU files: $e');
+      // Keep default file if parsing fails
+    }
+  }
+
+  void selectBcuFile(String filename) {
+    _selectedBcuFile = filename;
+    notifyListeners();
   }
 
   Future<void> _sendPlayCommands() async {
@@ -235,8 +374,37 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
       _setState(CommunicationState.sending);
       notifyListeners();
 
-      for (int i = 0; i < playCommands.length; i++) {
-        final command = playCommands[i];
+      // Generate current timestamp for #ST command
+      final now = DateTime.now();
+      final timestamp = '${now.year.toString().padLeft(4, '0')}'
+          '${now.month.toString().padLeft(2, '0')}'
+          '${now.day.toString().padLeft(2, '0')}'
+          '${now.hour.toString().padLeft(2, '0')}'
+          '${now.minute.toString().padLeft(2, '0')}'
+          '${now.second.toString().padLeft(2, '0')}';
+
+      // Generate timestamp for 24#PL command (1 second later)
+      final plTimestamp = '${now.year.toString().padLeft(4, '0')}'
+          '${now.month.toString().padLeft(2, '0')}'
+          '${now.day.toString().padLeft(2, '0')}'
+          '${now.hour.toString().padLeft(2, '0')}'
+          '${now.minute.toString().padLeft(2, '0')}'
+          '${(now.second + 1).toString().padLeft(2, '0')}';
+
+      // Create dynamic play commands
+      final dynamicPlayCommands = [
+        '#BSV!',
+        '5#STP!',
+        '5#CPS!',
+        '#PS,1,$_selectedBcuFile,48,5.0,4,10!',
+        '#ST,$timestamp!',
+        '#GAIN,27!',
+        '24#PL,3341,$plTimestamp,!',
+        '5#SPL!',
+      ];
+
+      for (int i = 0; i < dynamicPlayCommands.length; i++) {
+        final command = dynamicPlayCommands[i];
 
         // Update state to show which play command is being sent
         _setState(CommunicationState.sending);
@@ -267,8 +435,14 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
 
         notifyListeners();
 
-        // Small delay between commands
-        await Future.delayed(const Duration(milliseconds: 500));
+        // Special delay for #ST command - wait 1 second before sending 24#PL
+        if (command.startsWith('#ST,')) {
+          print('Waiting 1 second before sending 24#PL command...');
+          await Future.delayed(const Duration(seconds: 1));
+        } else {
+          // Small delay between other commands
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
       }
 
       _isSendingPlayCommands = false;
@@ -411,6 +585,8 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
   void resetCommandSequence() {
     _commandResponses.clear();
     _playCommandResponses.clear();
+    _availableBcuFiles.clear();
+    _selectedBcuFile = 'Uplift_Mood.bcu'; // Reset to default
     _setState(CommunicationState.idle);
     notifyListeners();
   }

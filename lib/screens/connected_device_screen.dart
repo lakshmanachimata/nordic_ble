@@ -24,10 +24,15 @@ class _ConnectedDeviceScreenState extends State<ConnectedDeviceScreen> {
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
-      create: (context) => ConnectedDeviceViewModel(
-        device: widget.device,
-        deviceName: widget.deviceName,
-      ),
+      create: (context) {
+        final viewModel = ConnectedDeviceViewModel(
+          device: widget.device,
+          deviceName: widget.deviceName,
+        );
+        // Set up callback to show file selection popup
+        viewModel.onFilesReady = () => _showFileSelectionDialog(context, viewModel);
+        return viewModel;
+      },
       child: Consumer<ConnectedDeviceViewModel>(
         builder: (context, viewModel, child) {
           return Scaffold(
@@ -122,6 +127,67 @@ class _ConnectedDeviceScreenState extends State<ConnectedDeviceScreen> {
                           ),
                         ],
                       ),
+                      
+                      // File selection button (show when files are available)
+                      if (viewModel.availableBcuFiles.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppTheme.lightBlue,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppTheme.blueAccent),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.audiotrack,
+                                    color: AppTheme.purpleHighlight,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Available Audio Files',
+                                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                      color: AppTheme.purpleHighlight,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      'Selected: ${viewModel.selectedBcuFile}',
+                                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                        color: AppTheme.darkText,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                  ElevatedButton.icon(
+                                    onPressed: () => _showFileSelectionDialog(context, viewModel),
+                                    icon: const Icon(Icons.folder_open, size: 16),
+                                    label: const Text('Change'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppTheme.orangeAccent,
+                                      foregroundColor: AppTheme.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                      minimumSize: const Size(0, 32),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                       
                       // Progress indicator
                       if (viewModel.state == CommunicationState.sending || viewModel.state == CommunicationState.waiting)
@@ -410,5 +476,114 @@ class _ConnectedDeviceScreenState extends State<ConnectedDeviceScreen> {
 
   String _formatTime(DateTime time) {
     return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}:${time.second.toString().padLeft(2, '0')}';
+  }
+
+  void _showFileSelectionDialog(BuildContext context, ConnectedDeviceViewModel viewModel) {
+    print('=== SHOWING FILE SELECTION DIALOG ===');
+    print('Available files: ${viewModel.availableBcuFiles}');
+    print('Selected file: ${viewModel.selectedBcuFile}');
+    
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: AppTheme.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Icon(
+                Icons.audiotrack,
+                color: AppTheme.purpleHighlight,
+                size: 24,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Select Audio File',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: AppTheme.purpleHighlight,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          content: Container(
+            width: double.maxFinite,
+            constraints: const BoxConstraints(maxHeight: 400),
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: viewModel.availableBcuFiles.length,
+              itemBuilder: (context, index) {
+                final filename = viewModel.availableBcuFiles[index];
+                final isSelected = filename == viewModel.selectedBcuFile;
+                
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  color: isSelected ? AppTheme.lightBlue : AppTheme.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(
+                      color: isSelected ? AppTheme.purpleHighlight : AppTheme.lightBlue,
+                      width: isSelected ? 2 : 1,
+                    ),
+                  ),
+                  child: ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: isSelected ? AppTheme.purpleHighlight : AppTheme.lightBlue,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        Icons.music_note,
+                        color: isSelected ? AppTheme.white : AppTheme.purpleHighlight,
+                        size: 20,
+                      ),
+                    ),
+                    title: Text(
+                      filename,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: isSelected ? AppTheme.purpleHighlight : AppTheme.darkText,
+                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                      ),
+                    ),
+                    subtitle: Text(
+                      'Audio file',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppTheme.lightText,
+                      ),
+                    ),
+                    trailing: isSelected
+                        ? Icon(
+                            Icons.check_circle,
+                            color: AppTheme.purpleHighlight,
+                            size: 24,
+                          )
+                        : null,
+                    onTap: () {
+                      viewModel.selectBcuFile(filename);
+                      Navigator.of(context).pop();
+                    },
+                  ),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(
+                'Cancel',
+                style: TextStyle(
+                  color: AppTheme.lightText,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 }
