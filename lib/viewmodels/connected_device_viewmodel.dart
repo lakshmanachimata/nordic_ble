@@ -24,13 +24,17 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
   final String deviceName;
 
   List<CommandResponse> _commandResponses = [];
+  List<CommandResponse> _playCommandResponses = [];
   CommunicationState _state = CommunicationState.idle;
   String _errorMessage = '';
   bool _isConnected = false;
-  
+
   // Add tracking for 5th command responses
   List<String> _fifthCommandResponses = [];
   bool _isWaitingForFifthCommand = false;
+  
+  // Add tracking for play commands
+  bool _isSendingPlayCommands = false;
 
   // Nordic UART Service UUIDs
   static const String nordicUartServiceUUID =
@@ -48,6 +52,10 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
     '#GM!',
     '7#GFL,5!',
     '5#SPL!',
+  ];
+
+  static const playCommands = [
+    '#BSV!',
     '5#STP!',
     '5#CPS!',
     '#PS,1,Uplift_Mood.bcu,48,5.0,4,10!',
@@ -64,11 +72,13 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
 
   // Getters
   List<CommandResponse> get commandResponses => _commandResponses;
+  List<CommandResponse> get playCommandResponses => _playCommandResponses;
   CommunicationState get state => _state;
   String get errorMessage => _errorMessage;
   bool get isConnected => _isConnected;
   bool get hasCompletedAllCommands =>
       _commandResponses.length == commands.length;
+  bool get isSendingPlayCommands => _isSendingPlayCommands;
 
   ConnectedDeviceViewModel({required this.device, required this.deviceName}) {
     _initializeConnection();
@@ -148,6 +158,7 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
 
     try {
       _commandResponses.clear();
+      _playCommandResponses.clear();
       _fifthCommandResponses.clear(); // Clear previous 5th command responses
       _setState(CommunicationState.sending);
       notifyListeners();
@@ -197,7 +208,7 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
 
         // Small delay between commands
         await Future.delayed(const Duration(milliseconds: 500));
-        
+
         // Special delay for 9th command (5 seconds)
         if (i == 8) {
           print('Waiting 5 seconds before sending 9th command...');
@@ -206,8 +217,66 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
       }
 
       _setState(CommunicationState.completed);
+      
+      // Wait 5 seconds before sending play commands
+      print('Waiting 5 seconds before sending play commands...');
+      await Future.delayed(const Duration(seconds: 5));
+      
+      // Send play commands
+      await _sendPlayCommands();
+      
     } catch (e) {
       _handleError('Command sequence error: $e');
+    }
+  }
+
+  Future<void> _sendPlayCommands() async {
+    try {
+      _isSendingPlayCommands = true;
+      _setState(CommunicationState.sending);
+      notifyListeners();
+
+      for (int i = 0; i < playCommands.length; i++) {
+        final command = playCommands[i];
+
+        // Update state to show which play command is being sent
+        _setState(CommunicationState.sending);
+        notifyListeners();
+
+        // Send command
+        await writeCommand(command);
+
+        // Wait for response
+        _setState(CommunicationState.waiting);
+        notifyListeners();
+
+        // Wait for response with timeout
+        final response = await _waitForResponse(
+          timeout: const Duration(seconds: 10),
+          commandIndex: null, // No special handling for play commands
+        );
+
+        // Add command response
+        _playCommandResponses.add(
+          CommandResponse(
+            command: command,
+            response: response,
+            timestamp: DateTime.now(),
+            isSuccess: response.isNotEmpty,
+          ),
+        );
+
+        notifyListeners();
+
+        // Small delay between commands
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
+
+      _isSendingPlayCommands = false;
+      _setState(CommunicationState.completed);
+    } catch (e) {
+      _isSendingPlayCommands = false;
+      _handleError('Play commands error: $e');
     }
   }
 
@@ -218,11 +287,11 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
     final completer = Completer<String>();
     Timer? timeoutTimer;
     String? lastResponse;
-    
+
     // Special handling for 5th command (7#GFL,5!) - accumulate all responses
     if (commandIndex == 4) {
       // 5th command (0-indexed)
-      
+
       // Set timeout
       timeoutTimer = Timer(timeout, () {
         if (!completer.isCompleted) {
@@ -239,23 +308,29 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
       // The responses are being accumulated in _handleNotification
       while (!completer.isCompleted && _fifthCommandResponses.isNotEmpty) {
         // Check if we have received the completion signal
-        if (_fifthCommandResponses.any((response) => response.contains('#Completed!'))) {
+        if (_fifthCommandResponses.any(
+          (response) => response.contains('#Completed!'),
+        )) {
           // Wait a bit more to ensure all responses are collected
           await Future.delayed(const Duration(milliseconds: 500));
           final fullResponse = _fifthCommandResponses.join('\n');
-          print('5th command - Final response with ${_fifthCommandResponses.length} parts');
+          print(
+            '5th command - Final response with ${_fifthCommandResponses.length} parts',
+          );
           completer.complete(fullResponse);
           break;
         }
-        
+
         // Wait a bit before checking again
         await Future.delayed(const Duration(milliseconds: 100));
       }
-      
+
       // If we haven't completed yet, use what we have
       if (!completer.isCompleted) {
         final fullResponse = _fifthCommandResponses.join('\n');
-        completer.complete(fullResponse.isNotEmpty ? fullResponse : 'No responses received');
+        completer.complete(
+          fullResponse.isNotEmpty ? fullResponse : 'No responses received',
+        );
       }
     } else {
       // Original behavior for other commands
@@ -292,10 +367,10 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
         return 'Error: Notify characteristic not available';
       }
     }
-    
+
     // Cancel timeout timer if it's still active
-    timeoutTimer?.cancel();
-    
+    timeoutTimer.cancel();
+
     return await completer.future;
   }
 
@@ -307,11 +382,13 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
     print('As string: "$stringValue"');
     print('Length: ${value.length}');
     print('=============================');
-    
+
     // If we're waiting for the 5th command, accumulate the response
     if (_isWaitingForFifthCommand) {
       _fifthCommandResponses.add(stringValue);
-      print('5th command - Accumulated response: "$stringValue" (Total: ${_fifthCommandResponses.length})');
+      print(
+        '5th command - Accumulated response: "$stringValue" (Total: ${_fifthCommandResponses.length})',
+      );
     }
   }
 
@@ -334,6 +411,7 @@ class ConnectedDeviceViewModel extends ChangeNotifier {
 
   void resetCommandSequence() {
     _commandResponses.clear();
+    _playCommandResponses.clear();
     _setState(CommunicationState.idle);
     notifyListeners();
   }

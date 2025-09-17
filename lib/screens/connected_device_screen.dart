@@ -130,13 +130,17 @@ class _ConnectedDeviceScreenState extends State<ConnectedDeviceScreen> {
                           child: Column(
                             children: [
                               LinearProgressIndicator(
-                                value: viewModel.commandResponses.length / ConnectedDeviceViewModel.commands.length,
+                                value: viewModel.isSendingPlayCommands 
+                                    ? (viewModel.playCommandResponses.length / ConnectedDeviceViewModel.playCommands.length)
+                                    : (viewModel.commandResponses.length / ConnectedDeviceViewModel.commands.length),
                                 backgroundColor: AppTheme.lightBlue,
                                 valueColor: AlwaysStoppedAnimation<Color>(AppTheme.purpleHighlight),
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                '${viewModel.commandResponses.length + 1}/${ConnectedDeviceViewModel.commands.length} - ${_getStateText(viewModel.state)}',
+                                viewModel.isSendingPlayCommands
+                                    ? 'Play Commands: ${viewModel.playCommandResponses.length + 1}/${ConnectedDeviceViewModel.playCommands.length} - ${_getStateText(viewModel.state)}'
+                                    : '${viewModel.commandResponses.length + 1}/${ConnectedDeviceViewModel.commands.length} - ${_getStateText(viewModel.state)}',
                                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                   color: AppTheme.purpleHighlight,
                                   fontWeight: FontWeight.w500,
@@ -215,15 +219,30 @@ class _ConnectedDeviceScreenState extends State<ConnectedDeviceScreen> {
                         Expanded(
                           child: ListView.builder(
                             padding: const EdgeInsets.all(16),
-                            itemCount: ConnectedDeviceViewModel.commands.length,
+                            itemCount: ConnectedDeviceViewModel.commands.length + ConnectedDeviceViewModel.playCommands.length,
                             itemBuilder: (context, index) {
-                              final command = ConnectedDeviceViewModel.commands[index];
-                              final response = index < viewModel.commandResponses.length 
-                                  ? viewModel.commandResponses[index] 
-                                  : null;
+                              // Determine if this is a regular command or play command
+                              final isPlayCommand = index >= ConnectedDeviceViewModel.commands.length;
+                              final commandIndex = isPlayCommand 
+                                  ? index - ConnectedDeviceViewModel.commands.length 
+                                  : index;
+                              
+                              final command = isPlayCommand 
+                                  ? ConnectedDeviceViewModel.playCommands[commandIndex]
+                                  : ConnectedDeviceViewModel.commands[commandIndex];
+                              
+                              final response = isPlayCommand
+                                  ? (commandIndex < viewModel.playCommandResponses.length 
+                                      ? viewModel.playCommandResponses[commandIndex] 
+                                      : null)
+                                  : (commandIndex < viewModel.commandResponses.length 
+                                      ? viewModel.commandResponses[commandIndex] 
+                                      : null);
+                              
                               final isCompleted = response != null;
                               final isCurrent = viewModel.state == CommunicationState.sending && 
-                                              viewModel.commandResponses.length == index;
+                                              ((!isPlayCommand && viewModel.commandResponses.length == commandIndex && !viewModel.isSendingPlayCommands) ||
+                                               (isPlayCommand && viewModel.isSendingPlayCommands && viewModel.playCommandResponses.length == commandIndex));
                               
                               return Card(
                                 margin: const EdgeInsets.only(bottom: 12),
@@ -231,19 +250,42 @@ class _ConnectedDeviceScreenState extends State<ConnectedDeviceScreen> {
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
                                   side: isCompleted 
-                                      ? BorderSide(color: AppTheme.greenAccent, width: 2)
+                                      ? BorderSide(color: isPlayCommand ? AppTheme.orangeAccent : AppTheme.greenAccent, width: 2)
                                       : isCurrent
-                                          ? BorderSide(color: AppTheme.blueAccent, width: 2)
+                                          ? BorderSide(color: isPlayCommand ? AppTheme.orangeAccent : AppTheme.blueAccent, width: 2)
                                           : BorderSide.none,
                                 ),
                                 child: ExpansionTile(
-                                  leading: _getCommandIcon(isCompleted, isCurrent),
-                                  title: Text(
-                                    command,
-                                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                      color: isCompleted ? AppTheme.greenAccent : null,
-                                      fontWeight: isCompleted ? FontWeight.w600 : null,
-                                    ),
+                                  leading: _getCommandIcon(isCompleted, isCurrent, isPlayCommand),
+                                  title: Row(
+                                    children: [
+                                      if (isPlayCommand) ...[
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: AppTheme.orangeAccent,
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: Text(
+                                            'PLAY',
+                                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                              color: AppTheme.white,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                      ],
+                                      Expanded(
+                                        child: Text(
+                                          command,
+                                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                            color: isCompleted ? (isPlayCommand ? AppTheme.orangeAccent : AppTheme.greenAccent) : null,
+                                            fontWeight: isCompleted ? FontWeight.w600 : null,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                   subtitle: Text(
                                     isCompleted 
@@ -252,7 +294,7 @@ class _ConnectedDeviceScreenState extends State<ConnectedDeviceScreen> {
                                             ? 'Sending...'
                                             : 'Pending',
                                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: isCompleted ? AppTheme.greenAccent : AppTheme.lightText,
+                                      color: isCompleted ? (isPlayCommand ? AppTheme.orangeAccent : AppTheme.greenAccent) : AppTheme.lightText,
                                     ),
                                   ),
                                   children: [
@@ -308,12 +350,12 @@ class _ConnectedDeviceScreenState extends State<ConnectedDeviceScreen> {
     );
   }
 
-  Widget _getCommandIcon(bool isCompleted, bool isCurrent) {
+  Widget _getCommandIcon(bool isCompleted, bool isCurrent, bool isPlayCommand) {
     if (isCompleted) {
       return Container(
         padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(
-          color: AppTheme.greenAccent,
+          color: isPlayCommand ? AppTheme.orangeAccent : AppTheme.greenAccent,
           borderRadius: BorderRadius.circular(12),
         ),
         child: const Icon(
@@ -326,7 +368,7 @@ class _ConnectedDeviceScreenState extends State<ConnectedDeviceScreen> {
       return Container(
         padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(
-          color: AppTheme.blueAccent,
+          color: isPlayCommand ? AppTheme.orangeAccent : AppTheme.blueAccent,
           borderRadius: BorderRadius.circular(12),
         ),
         child: const Icon(

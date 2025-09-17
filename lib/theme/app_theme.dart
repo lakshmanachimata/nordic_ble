@@ -8,6 +8,7 @@ class AppTheme {
   static const Color purpleLight = Color(0xFFE8DDFF); // Light purple
   static const Color blueAccent = Color(0xFF2196F3); // Blue accent
   static const Color greenAccent = Color(0xFF4CAF50); // Green accent
+  static const Color orangeAccent = Color(0xFFFF9800); // Orange accent
   static const Color darkText = Color(0xFF212121); // Dark text
   static const Color lightText = Color(0xFF757575); // Light text
   static const Color white = Color(0xFFFFFFFF); // White
